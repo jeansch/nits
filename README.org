@@ -1,0 +1,14 @@
+#+title: Nits (Non Intrusive Test SMTPserver)
+
+#+date: [2020-09-30 mer]
+
+This is a simple SMTP server. It listens for clients sending mails,
+then stores email into an mbox file and may send notifications to the desktop.
+
+It's purpose is to provide a simple debugging tool for applications
+sending emails.
+
+/Based on the work of Grzegorz Adam Hankiewicz <gradha@efaber.net>/
+
+
+[[https://github.com/jeansch/nits][https://github.com/jeansch/nits/]]

@@ -4,10 +4,10 @@
 Nits -- Non Intrusive Test SMTPserver
 
 This is a simple SMTP server. It listens for clients sending mails,
-then stores mail into an mbox file and may send notifications to the desktop.
+then stores email into an mbox file and may send notifications to the desktop.
 
 It's purpose is to provide a simple debugging tool for applications
-sending mails.
+sending emails.
 
 Copyright (c) Jean Schurger <jean@schurger.org>
 
