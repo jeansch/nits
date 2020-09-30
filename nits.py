@@ -1,9 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
-
-NITS -- like TITS but with an N. In fact it means,
-Non-Intrusive-Test-SMTPserver
+Nits -- Non Intrusive Test SMTPserver
 
 This is a simple SMTP server. It listens for clients sending mails,
 then stores mail into an mbox file and may send notifications to the desktop.
@@ -31,6 +29,11 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 """
 
 import os
+import getopt
+import sys
+from datetime import datetime
+from twisted.mail.smtp import SMTP, SMTPFactory
+from twisted.internet import reactor
 
 SUCCESSFUL_EXIT = 0
 DEFAULT_PORT_NUMBER = 12345
@@ -39,50 +42,55 @@ DEFAULT_SPOOL_FILE = os.path.realpath(os.path.join(os.environ.get("HOME"),
 DEFAULT_NOTIFY = False
 
 
-import sys
-from datetime import datetime
-from twisted.mail.smtp import SMTP, SMTPFactory
-from twisted.internet import reactor
+notify_help = ""
+try:
+    import gi
+    gi.require_version('Notify', '0.7')
+    from gi.repository import Notify
+    Notify.init('Nits')
+    notify_help = ("-n Send a notification on the desktop "
+                   "when a mail pass '%(notify)s' by default\n" % {
+                       'notify': DEFAULT_NOTIFY})
+except ImportError:
+    pass
 
 
 class Server(SMTP):
+
+    output = None
 
     def connectionMade(self):
         SMTP.connectionMade(self)
         self.data_mode = 0
 
     def lineReceived(self, line):
-        if self.data_mode:
-            if line == ".":
-                self.sendCode(250, "Ok")
+        if self.data_mode and self.output:
+            if line == b".":
+                self.sendCode(250, b"Ok")
                 self.data_mode = 0
                 try:
                     self.output.close()
-                except BaseException, e:
-                    print 'Something strange (%s) appened '
-                    'while closing the spool file' % e
+                except Exception as e:
+                    print("Something strange (%s) appened "
+                          "while closing the spool file" % e)
                 if self.verbose:
-                    print "A mail was sent..."
+                    print("A email was sent...")
                 if self.notify:
-                    import pygtk
-                    pygtk.require('2.0')
-                    import pynotify
-                    n = pynotify.Notification("Fake smtpserver",
-                                              "a mail was sent...")
+                    n = Notify.Notification.new("Nits", "A email was sent...")
                     n.show()
             else:
                 try:
-                    self.output.write(line + '\n')
-                except BaseException, e:
-                    print 'Something strange (%s) appened '
-                    'while writing to spool file' % e
+                    self.output.write(str(line + b'\n'))
+                except Exception as e:
+                    print("Something strange (%s) appened "
+                          "while writing to spool file" % e)
         else:
-            if line[:4].lower() == "quit":
-                self.sendCode(221, "Bye bye")
+            if line[:4].lower() == b"quit":
+                self.sendCode(221, b"Bye bye")
                 self.transport.loseConnection()
-            if line[:4].lower() in ["ehlo", "helo"]:
+            if line[:4].lower() in [b"ehlo", b"helo"]:
                 self.helo = line[5:]
-            if line[:4].lower() == "data":
+            if line[:4].lower() == b"data":
                 self.data_mode = 1
                 try:
                     now = datetime.now()
@@ -90,17 +98,17 @@ class Server(SMTP):
                     _from = "From %s" % self.helo
                     _date = now.strftime('%a %b %d %H:%M:%S %Y')
                     self.output.write('%s  %s\n' % (_from, _date))
-                except BaseException, e:
-                    print 'Something strange (%s) appened '
-                    'while opening the spool file' % e
-                self.sendCode(354, "Go ahead")
+                except Exception as e:
+                    print("Something strange (%s) appened "
+                          "while opening the spool file" % e)
+                self.sendCode(354, b"Go ahead")
             else:
-                self.sendCode(250, "Ok")
+                self.sendCode(250, b"Ok")
 
 
 def usage(binary_name="nits.py"):
     """Prints usage information and terminates execution."""
-    print """Usage: %(binary_name)s [-hv -p port_number -s spool_file]
+    print("""Usage: %(binary_name)s [-hv -p port_number -s spool_file]
 
 -h, --help
     Print this help screen.
@@ -111,14 +119,13 @@ def usage(binary_name="nits.py"):
     By default, the port is %(default_port)s
 -s yyy, --spool-file yyy
     Write mails to this file, by default, it's %(default_spool)s
--n Send a notification on the desktop with a mail pass %(notify)s by default
+%(notify_help)s
 Usage example:
  %(binary_name)s -p 12345 -s /tmp/spool -v
- """ % \
-    dict(binary_name=binary_name,
-         default_port=DEFAULT_PORT_NUMBER,
-         default_spool=DEFAULT_SPOOL_FILE,
-         notify=DEFAULT_NOTIFY)
+    """ % dict(notify_help=notify_help,
+               binary_name=binary_name,
+               default_port=DEFAULT_PORT_NUMBER,
+               default_spool=DEFAULT_SPOOL_FILE))
     sys.exit(1)
 
 
@@ -135,16 +142,15 @@ def process_command_line(argv=None):
     correct format of the accepted command line is documented by
     usage_information.
     """
-    import getopt
+
     if not argv:
         argv = sys.argv
-
     try:
         opts, args = getopt.getopt(argv[1:],
                                    "hnvp:s:",
                                    ["help", "port-number=", "spool-file="])
-    except getopt.GetoptError, msg:
-        print "Error processing command line: %s\n" % msg
+    except getopt.GetoptError as msg:
+        print("Error processing command line: %s\n" % msg)
         usage()
 
     port_number = DEFAULT_PORT_NUMBER
@@ -173,12 +179,12 @@ def main_process(port_number, spool_file, verbose, notify):
     factory.protocol.notify = notify
     factory.timeout = 200
     reactor.listenTCP(port_number, factory)
-    print "Listening on port %s, spooling on %s" % (port_number,
-                                                    spool_file)
-    if notify:
-        print "Will notify on the desktop"
     if verbose:
-        print "Will notify on the console"
+        print("Listening on port %s, spooling on %s" % (
+            port_number, spool_file))
+        if notify:
+            print("Will notify on the desktop")
+        print("Will notify on the console")
     reactor.run()
 
 
