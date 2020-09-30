@@ -78,7 +78,7 @@ class Server(SMTP):
                     n.show()
             else:
                 try:
-                    self.output.write(str(line + b'\n'))
+                    self.output.write(line + b'\n')
                 except Exception as e:
                     print("Something strange (%s) appened "
                           "while writing to spool file" % e)
@@ -92,10 +92,10 @@ class Server(SMTP):
                 self.data_mode = 1
                 try:
                     now = datetime.now()
-                    self.output = open(self.spool_file, "a")
-                    _from = "From %s" % self.helo
-                    _date = now.strftime('%a %b %d %H:%M:%S %Y')
-                    self.output.write('%s  %s\n' % (_from, _date))
+                    self.output = open(self.spool_file, "ab")
+                    _from = bytes("From %s" % self.helo, "utf8")
+                    _date = bytes(now.strftime('%a %b %d %H:%M:%S %Y'), "utf8")
+                    self.output.write(b'%s  %s\n' % (_from, _date))
                 except Exception as e:
                     print("Something strange (%s) appened "
                           "while opening the spool file" % e)
