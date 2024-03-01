@@ -186,6 +186,10 @@ def main_process(port_number, spool_file, verbose, notify):
     reactor.run()
 
 
-if __name__ == "__main__":
+def main():
     args = process_command_line()
     main_process(*args)
+
+
+if __name__ == "__main__":
+    main()
