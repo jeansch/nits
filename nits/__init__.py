@@ -39,23 +39,50 @@ DEFAULT_SPOOL_FILE = os.path.realpath(os.path.join(os.environ.get("HOME"),
                                                    ".fake_spool"))
 DEFAULT_NOTIFY = False
 
-
 notify_help = ""
+
+
+
+
+
+def gi_notify(title, message):
+    n = Notify.Notification.new(title, message)
+    n.show()
+
+
+def osx_notify(title, message):
+    cmd = "osascript -e 'display notification \"%s\" with title \"%s\"'" % (
+        message, title)
+    os.system(cmd)
+
+notifier = None
+
+if os.path.exists("/usr/bin/osascript"):
+    notifier = osx_notify
+
+
 try:
     import gi
     gi.require_version('Notify', '0.7')
     from gi.repository import Notify
     Notify.init('Nits')
-    notify_help = ("-n Send a notification on the desktop "
-                   "when a mail pass '%(notify)s' by default\n" % {
-                       'notify': DEFAULT_NOTIFY})
+    notifier = gi_notify
 except ImportError:
     pass
+
+
+if notifier:
+    notify_help = ("-n Send a notification on the desktop "
+               "when a mail pass '%(notify)s' by default\n" % {
+                   'notify': DEFAULT_NOTIFY})
 
 
 class Server(SMTP):
 
     output = None
+    subject = None
+    from_ = None
+    to_ = None
 
     def connectionMade(self):
         SMTP.connectionMade(self)
@@ -71,14 +98,25 @@ class Server(SMTP):
                 except Exception as e:
                     print("Something strange (%s) appened "
                           "while closing the spool file" % e)
+                msg = self.subject or "A email was sent..."
+                if self.notify and notifier:
+                    title = b"Nits"
+                    if self.from_:
+                        title += b" [From: '%s']" % self.from_
+                    if self.to_:
+                        title += b" [To: '%s']" % self.to_
+                    notifier(title.decode(), msg.decode())
                 if self.verbose:
-                    print("A email was sent...")
-                if self.notify:
-                    n = Notify.Notification.new("Nits", "A email was sent...")
-                    n.show()
+                    print(title.decode(), msg.decode())
             else:
                 try:
                     self.output.write(line + b'\n')
+                    if line.lower().startswith(b"subject:"):
+                        self.subject = line[9:]
+                    if line.lower().startswith(b"from:"):
+                        self.from_ = line[6:]
+                    if line.lower().startswith(b"to:"):
+                        self.to_ = line[4:]
                 except Exception as e:
                     print("Something strange (%s) appened "
                           "while writing to spool file" % e)
@@ -180,7 +218,7 @@ def main_process(port_number, spool_file, verbose, notify):
     if verbose:
         print("Listening on port %s, spooling on %s" % (
             port_number, spool_file))
-        if notify:
+        if notify and notifier:
             print("Will notify on the desktop")
         print("Will notify on the console")
     reactor.run()
@@ -193,3 +231,16 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test():
+    import smtplib
+    from email.message import EmailMessage
+    msg = EmailMessage()
+    msg.set_content("Test email!")
+    msg['Subject'] = 'Test !'
+    msg['From'] = "Me"
+    msg['To'] = "You"
+    s = smtplib.SMTP('localhost:%s' % DEFAULT_PORT_NUMBER)
+    s.send_message(msg)
+    s.quit()
