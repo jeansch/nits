@@ -98,13 +98,13 @@ class Server(SMTP):
                 except Exception as e:
                     print("Something strange (%s) appened "
                           "while closing the spool file" % e)
-                msg = self.subject or "A email was sent..."
+                msg = self.subject or b"A email was sent..."
+                title = b"Nits"
+                if self.from_:
+                    title += b" [From: '%s']" % self.from_
+                if self.to_:
+                    title += b" [To: '%s']" % self.to_
                 if self.notify and notifier:
-                    title = b"Nits"
-                    if self.from_:
-                        title += b" [From: '%s']" % self.from_
-                    if self.to_:
-                        title += b" [To: '%s']" % self.to_
                     notifier(title.decode(), msg.decode())
                 if self.verbose:
                     print(title.decode(), msg.decode())
