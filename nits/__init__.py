@@ -244,3 +244,327 @@ def test():
     s = smtplib.SMTP('localhost:%s' % DEFAULT_PORT_NUMBER)
     s.send_message(msg)
     s.quit()
+
+
+def process_inbox_command_line(argv=None):
+    """Process command line arguments for inbox command."""
+    if not argv:
+        argv = sys.argv
+
+    try:
+        opts, args = getopt.getopt(argv[1:], "hfs:n:", ["help", "follow", "spool-file=", "number="])
+    except getopt.GetoptError as msg:
+        print("Error processing command line: %s\n" % msg)
+        usage_inbox()
+
+    spool_file = DEFAULT_SPOOL_FILE
+    max_emails = None
+    follow = False
+
+    for option, value in opts:
+        if option in ("-h", "--help"):
+            usage_inbox()
+        elif option in ("-s", "--spool-file"):
+            spool_file = value
+        elif option in ("-n", "--number"):
+            max_emails = int(value)
+        elif option in ("-f", "--follow"):
+            follow = True
+
+    return (spool_file, max_emails, follow)
+
+
+def usage_inbox():
+    """Prints inbox usage information and terminates execution."""
+    print("""Usage: nits-inbox [-h -f -s spool_file -n number]
+
+-h, --help
+    Print this help screen.
+-f, --follow
+    Follow mode: wait for new emails and display them as they arrive (like tail -f)
+-s yyy, --spool-file yyy
+    Read mails from this file, by default, it's %(default_spool)s
+-n xxx, --number xxx
+    Display at most xxx emails (ignored in follow mode)
+
+Usage examples:
+ nits-inbox -s /tmp/spool -n 10
+ nits-inbox -f
+    """ % dict(default_spool=DEFAULT_SPOOL_FILE))
+    sys.exit(1)
+
+
+def parse_mbox_emails(spool_file):
+    """Parse emails from mbox file and return list of email dictionaries."""
+    import mailbox
+    import email.utils
+
+    if not os.path.exists(spool_file):
+        return []
+
+    emails = []
+    try:
+        mbox = mailbox.mbox(spool_file)
+        for idx, message in enumerate(mbox):
+            email_data = {
+                'number': idx + 1,
+                'from': message.get('From', ''),
+                'to': message.get('To', ''),
+                'subject': message.get('Subject', '(no subject)'),
+                'date': message.get('Date', ''),
+            }
+
+            # Parse date for sorting
+            if email_data['date']:
+                try:
+                    parsed_date = email.utils.parsedate_to_datetime(email_data['date'])
+                    email_data['parsed_date'] = parsed_date
+                except:
+                    email_data['parsed_date'] = None
+            else:
+                email_data['parsed_date'] = None
+
+            emails.append(email_data)
+        mbox.close()
+    except Exception as e:
+        print(f"Error reading spool file: {e}")
+        return []
+
+    return emails
+
+
+def display_email(email):
+    """Display a single email."""
+    print(f"{email['number']}. {email['subject']}")
+    print(f"   From: {email['from']}")
+    print(f"   To: {email['to']}")
+    if email['date']:
+        print(f"   Date: {email['date']}")
+    print()
+
+
+def inbox():
+    """List emails from the spool file."""
+    import time
+
+    spool_file, max_emails, follow = process_inbox_command_line()
+
+    if follow:
+        # Follow mode: monitor for new emails
+        print(f"Watching {spool_file} for new emails... (press Ctrl+C to stop)")
+        print()
+
+        last_count = 0
+        try:
+            while True:
+                emails = parse_mbox_emails(spool_file)
+                current_count = len(emails)
+
+                # Check if new emails arrived
+                if current_count > last_count:
+                    # Get only new emails
+                    new_emails = emails[last_count:]
+
+                    # Sort new emails by date (most recent first)
+                    emails_with_date = [e for e in new_emails if e['parsed_date'] is not None]
+                    emails_without_date = [e for e in new_emails if e['parsed_date'] is None]
+
+                    emails_with_date.sort(key=lambda x: x['parsed_date'], reverse=True)
+                    sorted_new = emails_with_date + emails_without_date
+
+                    # Display new emails
+                    for idx, email in enumerate(sorted_new, start=last_count + 1):
+                        email['number'] = idx
+                        display_email(email)
+
+                    last_count = current_count
+
+                # Wait before checking again
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\nStopped watching for new emails.")
+            return
+    else:
+        # Normal mode: list existing emails
+        emails = parse_mbox_emails(spool_file)
+
+        if not emails:
+            print("No emails found in %s" % spool_file)
+            return
+
+        # Sort by date (most recent first)
+        # Emails without valid dates go to the end
+        emails_with_date = [e for e in emails if e['parsed_date'] is not None]
+        emails_without_date = [e for e in emails if e['parsed_date'] is None]
+
+        emails_with_date.sort(key=lambda x: x['parsed_date'], reverse=True)
+        sorted_emails = emails_with_date + emails_without_date
+
+        # Renumber after sorting
+        for idx, email in enumerate(sorted_emails):
+            email['number'] = idx + 1
+
+        # Apply max_emails limit if specified
+        if max_emails is not None:
+            sorted_emails = sorted_emails[:max_emails]
+
+        # Display emails
+        for email in sorted_emails:
+            display_email(email)
+
+
+def process_cat_command_line(argv=None):
+    """Process command line arguments for cat command."""
+    if not argv:
+        argv = sys.argv
+
+    try:
+        opts, args = getopt.getopt(argv[1:], "hs:", ["help", "spool-file="])
+    except getopt.GetoptError as msg:
+        print("Error processing command line: %s\n" % msg)
+        usage_cat()
+
+    spool_file = DEFAULT_SPOOL_FILE
+    email_number = None
+
+    for option, value in opts:
+        if option in ("-h", "--help"):
+            usage_cat()
+        elif option in ("-s", "--spool-file"):
+            spool_file = value
+
+    # Get email number from remaining args
+    if args:
+        try:
+            email_number = int(args[0])
+        except ValueError:
+            print(f"Error: '{args[0]}' is not a valid email number\n")
+            usage_cat()
+
+    return (spool_file, email_number)
+
+
+def usage_cat():
+    """Prints cat usage information and terminates execution."""
+    print("""Usage: nits-cat [number] [-h -s spool_file]
+
+Display the full content of an email.
+
+Arguments:
+    number              The email number to display (1 = most recent, 2 = second most recent, etc.)
+                        If not specified, displays the most recent email (1)
+
+Options:
+-h, --help
+    Print this help screen.
+-s yyy, --spool-file yyy
+    Read mails from this file, by default, it's %(default_spool)s
+
+Usage examples:
+ nits-cat              # Display most recent email
+ nits-cat 1            # Display most recent email (same as above)
+ nits-cat 3            # Display third most recent email
+ nits-cat 5 -s /tmp/spool
+    """ % dict(default_spool=DEFAULT_SPOOL_FILE))
+    sys.exit(1)
+
+
+def cat():
+    """Display full content of a specific email."""
+    import mailbox
+
+    spool_file, email_number = process_cat_command_line()
+
+    # Default to most recent email (number 1) if not specified
+    if email_number is None:
+        email_number = 1
+
+    if email_number < 1:
+        print("Error: email number must be at least 1")
+        sys.exit(1)
+
+    if not os.path.exists(spool_file):
+        print(f"No emails found in {spool_file}")
+        sys.exit(1)
+
+    # Parse all emails
+    emails = parse_mbox_emails(spool_file)
+
+    if not emails:
+        print(f"No emails found in {spool_file}")
+        sys.exit(1)
+
+    # Sort by date (most recent first)
+    emails_with_date = [e for e in emails if e['parsed_date'] is not None]
+    emails_without_date = [e for e in emails if e['parsed_date'] is None]
+
+    emails_with_date.sort(key=lambda x: x['parsed_date'], reverse=True)
+    sorted_emails = emails_with_date + emails_without_date
+
+    # Check if requested email exists
+    if email_number > len(sorted_emails):
+        print(f"Error: only {len(sorted_emails)} email(s) found in {spool_file}")
+        sys.exit(1)
+
+    # Get the requested email (convert to 0-based index)
+    target_idx = email_number - 1
+
+    # Now get the full content from the mbox
+    try:
+        mbox = mailbox.mbox(spool_file)
+
+        # Find the email that matches our sorted position
+        # We need to match by comparing headers since mbox order may differ
+        target_email_data = sorted_emails[target_idx]
+
+        found = False
+        for message in mbox:
+            # Match by comparing from, to, subject, and date
+            if (message.get('From', '') == target_email_data['from'] and
+                message.get('To', '') == target_email_data['to'] and
+                message.get('Subject', '(no subject)') == target_email_data['subject'] and
+                message.get('Date', '') == target_email_data['date']):
+
+                # Display headers
+                print(f"Email #{email_number} (of {len(sorted_emails)})")
+                print(f"From: {message.get('From', '')}")
+                print(f"To: {message.get('To', '')}")
+                print(f"Subject: {message.get('Subject', '(no subject)')}")
+                print(f"Date: {message.get('Date', '')}")
+                print()
+                print("-" * 70)
+                print()
+
+                # Display body
+                if message.is_multipart():
+                    for part in message.walk():
+                        content_type = part.get_content_type()
+                        if content_type == 'text/plain':
+                            payload = part.get_payload(decode=True)
+                            if payload:
+                                print(payload.decode(part.get_content_charset() or 'utf-8', errors='replace'))
+                        elif content_type == 'text/html':
+                            # If no plain text found, show HTML as fallback
+                            payload = part.get_payload(decode=True)
+                            if payload:
+                                print("[HTML Content]")
+                                print(payload.decode(part.get_content_charset() or 'utf-8', errors='replace'))
+                else:
+                    payload = message.get_payload(decode=True)
+                    if payload:
+                        print(payload.decode(message.get_content_charset() or 'utf-8', errors='replace'))
+                    else:
+                        print(message.get_payload())
+
+                found = True
+                break
+
+        mbox.close()
+
+        if not found:
+            print(f"Error: could not find email #{email_number}")
+            sys.exit(1)
+
+    except Exception as e:
+        print(f"Error reading email: {e}")
+        sys.exit(1)

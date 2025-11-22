@@ -1,3 +1,35 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "nits"
+version = "1.0.0"
+description = "Non Intrusive Test SMTPserver"
+authors = [
+    {name = "Jean Schurger", email = "jean@schurger.org"}
+]
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "GPLv3"}
+dependencies = [
+    "Twisted",
+]
+
+[project.urls]
+Homepage = "https://github.com/jeansch/nits"
+
+[project.optional-dependencies]
+dev = [
+    "build",
+    "twine",
+]
+
+[project.scripts]
+nits = "nits:main"
+nits-test = "nits:test"
+nits-inbox = "nits:inbox"
+nits-cat = "nits:cat"
+
+[tool.setuptools]
+packages = ["nits"]
